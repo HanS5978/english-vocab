@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>我的英文單字本</title>
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="單字本">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1f6f5c">
 <style>
   :root{
     --bg:#f6f4ef; --card:#fff; --ink:#1f2a2e; --muted:#6b7478; --line:#e4e0d8;
@@ -290,16 +298,29 @@ function speakTTS(text, slow, quiet){
     else if(!quiet) toast("發音暫時失敗，請再按一次");
   });
 }
+function browserSpeak(text, slow){
+  const ss=window.speechSynthesis;
+  if(ss.speaking||ss.pending) ss.cancel();          // iPhone：一律先 cancel 再 speak 有時會沒聲音，只在需要時才取消
+  if(!voice) pickVoice();
+  const u=new SpeechSynthesisUtterance(text); u.lang="en-US"; if(voice) u.voice=voice; u.rate=slow?0.6:0.95; u.volume=1;
+  ss.speak(u); try{ ss.resume(); }catch(e){}
+  return u;
+}
 function speak(text, slow, auto){
-  // 瀏覽器有英文語音而且之前成功過 → 用瀏覽器語音；否則改用 Claude 語音
-  if(browserWorks!==false && hasBrowserVoice()){
+  const hasSS = "speechSynthesis" in window;
+  // 沒有 Claude 語音（例如 GitHub 版、Safari）：一律用裝置內建語音，不做任何判斷
+  if(!tts || ttsBlocked){
+    if(!hasSS){ if(!auto) toast("這個瀏覽器不支援發音"); return; }
+    try{ browserSpeak(text, slow); }catch(e){ if(!auto) toast("無法播放發音"); }
+    return;
+  }
+  // 有 Claude 語音（Claude 電腦版）：裝置有英文語音就先用裝置的，沒聲音再改用 Claude 語音
+  if(hasSS && browserWorks!==false && hasBrowserVoice()){
     try{
-      speechSynthesis.cancel();
-      const u=new SpeechSynthesisUtterance(text); u.lang="en-US"; if(voice) u.voice=voice; u.rate=slow?0.6:0.95;
+      const u=browserSpeak(text, slow);
       let started=false; u.onstart=()=>{ started=true; browserWorks=true; };
       u.onerror=()=>{ if(!started){ browserWorks=false; speakTTS(text, slow, auto); } };
-      speechSynthesis.speak(u);
-      if(browserWorks===null) setTimeout(()=>{ if(!started){ browserWorks=false; try{speechSynthesis.cancel();}catch(e){} speakTTS(text, slow, auto?true:"retry"); } }, 900);
+      if(browserWorks===null) setTimeout(()=>{ if(!started){ browserWorks=false; try{speechSynthesis.cancel();}catch(e){} speakTTS(text, slow, auto?true:"retry"); } }, 1500);
       return;
     }catch(e){ browserWorks=false; }
   }
@@ -308,7 +329,7 @@ function speak(text, slow, auto){
 
 /* ================= 畫面框架 ================= */
 const app=document.getElementById("app");
-let state={tab:"home", learn:null, quiz:null, bank:{topic:"g:toeic", q:"", open:null, filter:"all"}};
+let state={tab:"home", learn:null, quiz:null, bank:{topic:"g:pro", q:"", open:null, filter:"all"}};
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>go(b.dataset.tab));
 function go(tab){ state.tab=tab; document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.toggle("on",x.dataset.tab===tab)); render(); window.scrollTo(0,0); }
 function render(){ ({home:renderHome, learn:renderLearn, quiz:renderQuiz, bank:renderBank, add:renderAdd})[state.tab](); }
@@ -355,14 +376,14 @@ function renderHome(){
     <div class="row" style="margin-top:14px"><div class="grow">✍️ 拼字複習</div>${due?`<span class="muted">${due} 個字到期該複習</span>`:""}</div>
     <div class="btns">
       <button class="btn" id="goToday" ${todayN?"":"disabled"}>複習今天的字<br><small>${todayN} 題</small></button>
-      <button class="btn" id="goReview" ${learnedN?"":"disabled"}>總複習<br><small>學過的 ${learnedN} 字・${Math.min(20,learnedN)} 題</small></button>
+      <button class="btn" id="goReview" ${learnedN?"":"disabled"}>總複習<br><small>隨機 ${Math.min(TOTAL_Q,learnedN)} 題</small></button>
     </div>
     ${tl.q?`<p class="muted" style="margin:10px 0 0">今天已作答 ${tl.q} 題，答對 ${tl.c} 題。</p>`:""}
   </div>`;
   document.getElementById("goLearn").onclick=()=>{ startLearn(remainNew||DAY); };
   bindPw(renderHome);
   document.getElementById("goToday").onclick=()=>startQuiz(shuffle(recentLearned(1)), "今天的字");
-  document.getElementById("goReview").onclick=()=>startQuiz(totalReviewItems(20), "總複習");
+  document.getElementById("goReview").onclick=()=>startQuiz(totalReviewItems(), "總複習");
 
 }
 
@@ -418,11 +439,11 @@ function startQuiz(items, label){
   state.tab="quiz"; document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.toggle("on",x.dataset.tab==="quiz"));
   renderQuestion(); window.scrollTo(0,0);
 }
-function totalReviewItems(n){
-  const t=today(), learned=Object.keys(S.prog).map(k=>BY.get(k)).filter(Boolean);
-  const score=x=>{ const p=P(x.w)||[0,t,0]; return (p[1]<=t?100:0) + (p[2]||0)*10 + Math.random()*5; };
-  const ranked=learned.sort((a,b)=>score(b)-score(a));
-  return shuffle(n? ranked.slice(0,n) : ranked);
+const TOTAL_Q = 10;   // 總複習固定 10 題
+function totalReviewItems(){
+  // 每次都從學過的字裡完全隨機抽 10 個
+  const learned=Object.keys(S.prog).map(k=>BY.get(k)).filter(Boolean);
+  return shuffle(learned).slice(0, TOTAL_Q);
 }
 function renderQuiz(){
   if(state.quiz && !state.quiz.done) return renderQuestion();
@@ -432,15 +453,12 @@ function renderQuiz(){
   <div class="card"><h2>🆕 今天的字測驗</h2>
     <p class="muted" style="margin-top:0">考今天學過的 ${todays.length} 個字，全部都會出現。</p>
     <button class="btn" id="qToday" ${todays.length?"":"disabled"}>${todays.length?`開始測驗（${todays.length} 題）`:"今天還沒學新字"}</button></div>
-  <div class="card"><h2>📚 已出現過的字總測驗</h2>
-    <p class="muted" style="margin-top:0">從你學過的 ${learned.length} 個字裡出題。到期該複習的字、常拼錯的字會優先出現。</p>
-    <label>題數</label>
-    <div class="seg" id="nseg">${[10,20,30,50].map(n=>`<button data-n="${n}" class="${n===20?"on":""}">${n}</button>`).join("")}<button data-n="0">全部</button></div>
-    <div class="btns"><button class="btn" id="qAll" ${learned.length?"":"disabled"}>開始總測驗</button></div></div>
+  <div class="card"><h2>📚 總複習</h2>
+    <p class="muted" style="margin-top:0">從你學過的 ${learned.length} 個字裡隨機抽 ${Math.min(TOTAL_Q,learned.length)} 題，每次按都不一樣。</p>
+    <div class="btns"><button class="btn" id="qAll" ${learned.length?"":"disabled"}>開始總複習</button></div></div>
   <p class="muted center">每一題：看中文和例句、聽發音，把空格的英文拼出來。<br>答錯的字最後會再考一次，並排進近期複習。</p>`;
-  let n=20; document.querySelectorAll("#nseg button").forEach(b=>b.onclick=()=>{ n=+b.dataset.n; document.querySelectorAll("#nseg button").forEach(x=>x.classList.toggle("on",x===b)); });
   document.getElementById("qToday").onclick=()=>startQuiz(shuffle([...todays]), "今天的字");
-  document.getElementById("qAll").onclick=()=>startQuiz(totalReviewItems(n), "總複習");
+  document.getElementById("qAll").onclick=()=>startQuiz(totalReviewItems(), "總複習");
 }
 function blankSentence(x){
   if(!x.ex) return null;
