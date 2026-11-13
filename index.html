@@ -22,15 +22,11 @@
       --accent:#5fc0a5; --accent-soft:#1d332d; --warn:#e8836c; --warn-soft:#3a2420; --gold:#e0b25a; --gold-soft:#3a3020; }
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;line-height:1.5;padding-bottom:76px}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;line-height:1.5;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
   header{padding:16px 16px 4px;max-width:640px;margin:0 auto;display:flex;align-items:baseline;gap:8px}
   h1{font-size:20px;margin:0}
   .sync{margin-left:auto;font-size:12px;color:var(--muted)}
   main{max-width:640px;margin:0 auto;padding:8px 16px 24px}
-  nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;z-index:5;padding-bottom:env(safe-area-inset-bottom)}
-  nav.tabs button{flex:1;border:none;background:none;color:var(--muted);padding:8px 2px 10px;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
-  nav.tabs button span{font-size:20px;line-height:1}
-  nav.tabs button.on{color:var(--accent);font-weight:700}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
   .row{display:flex;align-items:center;gap:10px}
   .grow{flex:1;min-width:0}
@@ -82,20 +78,13 @@
   .seg button{flex:1;min-width:70px;padding:9px 6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;font-size:14px;cursor:pointer;font-family:inherit}
   .seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
   .note{background:var(--gold-soft);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px}
-  #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#1f2a2e;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:9;max-width:90%;text-align:center;display:none}
+  #toast{position:fixed;left:50%;bottom:calc(30px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1f2a2e;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:9;max-width:90%;text-align:center;display:none}
   h2{font-size:16px;margin:0 0 6px}
 </style>
 </head>
 <body>
-<header><h1>📘 我的英文單字本</h1><span class="sync" id="sync">本機模式</span></header>
+<header><h1 id="title" style="cursor:pointer">📘 我的英文單字本</h1><span class="sync" id="sync">本機模式</span></header>
 <main id="app"><div class="empty">載入單字中…</div></main>
-<nav class="tabs">
-  <button data-tab="home" class="on"><span>🏠</span>今日</button>
-  <button data-tab="learn"><span>🃏</span>學新字</button>
-  <button data-tab="quiz"><span>✍️</span>測驗</button>
-  <button data-tab="bank"><span>📚</span>單字庫</button>
-  <button data-tab="add"><span>➕</span>新增</button>
-</nav>
 <div id="toast"></div>
 <script src="words.js"></script>
 <script>
@@ -279,7 +268,7 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
-const APP_VERSION="v7（11/14 學新字直接開始）";
+const APP_VERSION="v9（11/14 全部整合到首頁）";
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
@@ -365,9 +354,12 @@ function speak(text, slow, auto){
 /* ================= 畫面框架 ================= */
 const app=document.getElementById("app");
 let state={tab:"home", learn:null, quiz:null, bank:{topic:"r0", q:"", open:null, filter:"all"}};
-document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>go(b.dataset.tab));
+document.getElementById("title").onclick=()=>{ if(state.learn||(state.quiz&&!state.quiz.done)) return; go("home"); };
 function go(tab){ state.tab=tab; document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.toggle("on",x.dataset.tab===tab)); render(); window.scrollTo(0,0); }
-function render(){ ({home:renderHome, learn:renderLearn, quiz:renderQuiz, bank:renderBank, add:renderAdd})[state.tab](); }
+function render(){ ({home:renderHome, learn:renderLearn, quiz:renderQuiz, bank:renderBank, add:renderAdd})[state.tab]();
+  if(state.tab==="bank"||state.tab==="add"){   // 子頁面最上方放「回首頁」
+    const b=document.createElement("div"); b.innerHTML='<button class="icon" id="backHome" style="margin-bottom:10px">← 回首頁</button>';
+    app.prepend(b); document.getElementById("backHome").onclick=()=>go("home"); } }
 function bindSpeak(root=app){
   root.querySelectorAll("[data-say]").forEach(b=>b.onclick=e=>{e.stopPropagation(); speak(b.dataset.say);});
   root.querySelectorAll("[data-slow]").forEach(b=>b.onclick=e=>{e.stopPropagation(); speak(b.dataset.slow,true);});
@@ -414,11 +406,17 @@ function renderHome(){
       <button class="btn" id="goReview" ${learnedN?"":"disabled"}>總複習<br><small>隨機 ${Math.min(TOTAL_Q,learnedN)} 題</small></button>
     </div>
     ${tl.q?`<p class="muted" style="margin:10px 0 0">今天已作答 ${tl.q} 題，答對 ${tl.c} 題。</p>`:""}
+  </div>
+  <div class="btns" style="margin-bottom:10px">
+    <button class="btn ghost" id="goBank">📚 單字庫<br><small>查字、聽發音、收藏</small></button>
+    <button class="btn ghost" id="goAdd">➕ 新增與設定<br><small>自訂單字、備份、發音</small></button>
   </div>`;
   document.getElementById("goLearn").onclick=()=>{ startLearn(remainNew||DAY); };
   bindPw(renderHome);
   document.getElementById("goToday").onclick=()=>startQuiz(shuffle(recentLearned(1)), "今天的字");
   document.getElementById("goReview").onclick=()=>startQuiz(totalReviewItems(), "總複習");
+  document.getElementById("goBank").onclick=()=>go("bank");
+  document.getElementById("goAdd").onclick=()=>go("add");
 
 }
 
@@ -436,7 +434,7 @@ function renderLearn(){
     app.innerHTML=`<div class="card center"><div class="big">🎉 ${L.done.length}</div><p>個新字學完了！</p>
       ${`<p>🔑 目前的進度密碼：<b style="font-family:ui-monospace,Menlo,monospace;font-size:24px;letter-spacing:5px;color:var(--accent)">${currentPassword().code}</b><br><span class="muted">記下來，換手機時可以用它回復進度。</span></p>`}
       <p class="muted">趁記憶還熱，馬上用拼字測驗加深印象吧。</p>
-      <div class="btns"><button class="btn ghost" id="h">回到今日</button><button class="btn" id="q">拼字測驗</button></div></div>`;
+      <div class="btns"><button class="btn ghost" id="h">回首頁</button><button class="btn" id="q">拼字測驗</button></div></div>`;
     document.getElementById("h").onclick=()=>{ state.learn=null; go("home"); };
     document.getElementById("q").onclick=()=>{ const it=L.done; state.learn=null; startQuiz(shuffle([...it]), "剛學的字"); };
     return;
@@ -454,7 +452,7 @@ function renderLearn(){
   <div class="btns"><button class="btn ghost" id="no">還不熟</button><button class="btn" id="yes">記住了 ✓</button></div>
   <div class="center" style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
     ${L.done.length?`<button class="icon" id="midQuiz">✍️ 先測驗已看過的 ${L.done.length} 個字</button>`:""}
-    <button class="icon" id="quitLearn">🏠 結束學習，回到今日</button></div>`;
+    <button class="icon" id="quitLearn">🏠 結束學習，回首頁</button></div>`;
   bindSpeak(); speak(x.w,false,true);
   const mq=document.getElementById("midQuiz"); if(mq) mq.onclick=()=>{ const it=[...L.done]; L.items=L.items.slice(L.i); L.i=0; L.done=[]; state.resumeLearn=L; state.learn=null; startQuiz(shuffle(it), "剛學的字"); };
   document.getElementById("quitLearn").onclick=()=>{ S.pending=L.items.slice(L.i).map(x=>x.w.toLowerCase()); save(); state.learn=null; go("home"); if(L.done.length) toast(`已看過的 ${L.done.length} 個字有保存`); };
@@ -465,7 +463,7 @@ function renderLearn(){
 /* ================= 測驗 ================= */
 function startQuiz(items, label){
   if(!items.length){ toast("沒有可以測驗的字"); return; }
-  state.quiz={items, i:0, score:0, wrong:[], retry:false, label, first:items.length, done:false};
+  state.quiz={items, i:0, score:0, wrong:[], retry:false, label, first:items.length, done:false, orig:[...items]};
   state.tab="quiz"; document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.toggle("on",x.dataset.tab==="quiz"));
   renderQuestion(); window.scrollTo(0,0);
 }
@@ -564,11 +562,11 @@ function finish(){
   ${missed.length?`<div class="card"><h2>這次拼錯的字</h2>${missed.map(x=>`<div class="row" style="margin-top:8px"><div class="grow"><b>${esc(x.w)}</b> <span class="muted">${esc(x.zh)}</span></div>${spk(x)}</div>`).join("")}
     <p class="muted">這些字已經排進今天的複習清單。</p></div>`:""}
   ${state.resumeLearn&&state.resumeLearn.items.length?`<div class="btns"><button class="btn" id="resume">🃏 繼續學剩下的 ${state.resumeLearn.items.length} 個新字</button></div>`:""}
-  <div class="btns"><button class="btn ghost" id="home">回到今日</button><button class="btn ghost" id="again">再測一次</button></div>`;
+  <div class="btns"><button class="btn ghost" id="home">回首頁</button><button class="btn ghost" id="again">${q.label==="總複習"?"再來 10 題":"再測一次"}</button></div>`;
   bindSpeak();
   const rs=document.getElementById("resume"); if(rs) rs.onclick=()=>{ state.quiz=null; state.learn=state.resumeLearn; state.resumeLearn=null; go("learn"); };
   document.getElementById("home").onclick=()=>{ state.quiz=null; go("home"); };
-  document.getElementById("again").onclick=()=>{ state.quiz=null; renderQuiz(); };
+  document.getElementById("again").onclick=()=>{ const lb=q.label, it= lb==="總複習"? totalReviewItems() : lb==="今天的字"? shuffle(recentLearned(1)) : shuffle([...q.orig]); state.quiz=null; startQuiz(it, lb); };
 }
 
 /* ================= 單字庫 ================= */
