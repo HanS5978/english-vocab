@@ -279,7 +279,7 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
-const APP_VERSION="v3（11/14 發音修正）";
+const APP_VERSION="v4（11/14 靜音模式發音）";
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
@@ -301,7 +301,36 @@ function speakTTS(text, slow, quiet){
     else if(!quiet) toast("發音暫時失敗，請再按一次");
   });
 }
+/* ---- 靜音模式也發音（iPhone）----
+   iPhone 的網頁發音會跟著靜音開關。做法：在第一次點擊時，
+   ① 把網頁音訊類型設成「播放」（iOS 17 以上支援 navigator.audioSession）
+   ② 循環播放一段無聲音訊，讓 iPhone 把這個網頁當成媒體播放，不受靜音開關影響。 */
+let silentModeOn = (()=>{ try{ return localStorage.getItem("vocab_silent_play")!=="off"; }catch(e){ return true; } })();
+let audioUnlocked=false, silentAudio=null;
+function silentWavURL(){
+  const rate=8000, n=rate/2, buf=new ArrayBuffer(44+n), v=new DataView(buf);
+  const w=(o,str)=>{ for(let i=0;i<str.length;i++) v.setUint8(o+i,str.charCodeAt(i)); };
+  w(0,"RIFF"); v.setUint32(4,36+n,true); w(8,"WAVE"); w(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate,true); v.setUint16(32,1,true); v.setUint16(34,8,true); w(36,"data"); v.setUint32(40,n,true);
+  for(let i=0;i<n;i++) v.setUint8(44+i,128);
+  return URL.createObjectURL(new Blob([buf],{type:"audio/wav"}));
+}
+function unlockAudio(){
+  if(!silentModeOn || audioUnlocked) return;
+  try{ if(navigator.audioSession) navigator.audioSession.type="playback"; }catch(e){}
+  try{
+    if(!silentAudio){ silentAudio=new Audio(silentWavURL()); silentAudio.loop=true; silentAudio.setAttribute("playsinline",""); silentAudio.volume=0.01; }
+    const pr=silentAudio.play(); audioUnlocked=true;
+    if(pr && pr.catch) pr.catch(()=>{ audioUnlocked=false; });
+  }catch(e){ audioUnlocked=false; }
+}
+function stopSilent(){ try{ if(silentAudio){ silentAudio.pause(); } }catch(e){} audioUnlocked=false; try{ if(navigator.audioSession) navigator.audioSession.type="auto"; }catch(e){} }
+if(IS_IOS){
+  ["touchend","click"].forEach(ev=>document.addEventListener(ev, unlockAudio, true));
+  document.addEventListener("visibilitychange", ()=>{ if(document.hidden){ try{ silentAudio&&silentAudio.pause(); }catch(e){} audioUnlocked=false; } });
+}
 function browserSpeak(text, slow){
+  if(IS_IOS) unlockAudio();
   const ss=window.speechSynthesis;
   if(ss.speaking||ss.pending) ss.cancel();          // iPhone：一律先 cancel 再 speak 有時會沒聲音，只在需要時才取消
   if(!voice) pickVoice();
@@ -608,6 +637,8 @@ function renderAdd(){
     <label>發音方式</label>
     <div class="seg" id="vmSeg"><button data-v="auto">自動</button><button data-v="plain">系統預設聲音</button><button data-v="pick">指定英文聲音</button></div>
     <div class="btns"><button class="btn ghost" id="vTest">🔊 測試發音：Hello, nice to meet you.</button></div>
+    <div class="btns"><button class="btn ghost" id="smBtn"></button></div>
+    <p class="muted" style="margin:6px 0 0">開啟後，iPhone 靜音時也會發音；但用單字本時，背景音樂（例如 Spotify）可能會被暫停。</p>
     <p class="muted" style="margin:8px 0 0">iPhone 沒聲音時請檢查：① 側邊靜音開關或「動作按鈕」不要開靜音 ② 音量調大 ③ 設定 → 輔助使用 → 朗讀內容 → 聲音 → 英文，下載一個英文聲音。</p></div>
   <div class="card"><h2>完整進度備份</h2>
     <p class="muted" style="margin-top:0">把學習進度、收藏、自訂單字整包複製成一段備份碼，貼到記事本或傳給自己保存。換手機、換瀏覽器或清除資料後，貼回來就能還原。</p>
@@ -618,11 +649,13 @@ function renderAdd(){
   const $=id=>document.getElementById(id);
   const showDiag=()=>{ let v=[]; try{ v=speechSynthesis.getVoices(); }catch(e){}
     const en=v.filter(x=>/^en[-_]/i.test(x.lang));
-    $("diag").textContent=`版本：${APP_VERSION}\n裝置：${IS_IOS?"iPhone/iPad":"其他"}\n支援語音：${"speechSynthesis" in window?"是":"否"}\n聲音數量：${v.length}（英文 ${en.length}）\n指定聲音：${voice?voice.name+" "+voice.lang:"無"}\nClaude 語音：${tts?"有":"無"}`;
+    $("diag").textContent=`版本：${APP_VERSION}\n裝置：${IS_IOS?"iPhone/iPad":"其他"}\n支援語音：${"speechSynthesis" in window?"是":"否"}\n聲音數量：${v.length}（英文 ${en.length}）\n指定聲音：${voice?voice.name+" "+voice.lang:"無"}\nClaude 語音：${tts?"有":"無"}\n靜音模式發音：${silentModeOn?"開":"關"}（${navigator.audioSession?"支援音訊類型設定":"不支援音訊類型設定"}，無聲音訊${audioUnlocked?"播放中":"未播放"}）`;
+    $("smBtn").textContent = silentModeOn ? "🔔 靜音模式也發音：開（點一下關閉）" : "🔕 靜音模式也發音：關（點一下開啟）";
     document.querySelectorAll("#vmSeg button").forEach(b=>b.classList.toggle("on",b.dataset.v===voiceMode)); };
   showDiag(); try{ speechSynthesis.onvoiceschanged=()=>{ pickVoice(); showDiag(); }; }catch(e){}
   document.querySelectorAll("#vmSeg button").forEach(b=>b.onclick=()=>{ voiceMode=b.dataset.v; try{ localStorage.setItem("vocab_voice_mode",voiceMode); }catch(e){} showDiag(); speak("Hello, nice to meet you."); });
-  $("vTest").onclick=()=>speak("Hello, nice to meet you.");
+  $("vTest").onclick=()=>{ speak("Hello, nice to meet you."); setTimeout(showDiag,300); };
+  $("smBtn").onclick=()=>{ silentModeOn=!silentModeOn; try{ localStorage.setItem("vocab_silent_play", silentModeOn?"on":"off"); }catch(e){} if(silentModeOn) unlockAudio(); else stopSilent(); showDiag(); };
   $("try").onclick=()=>{ const w=$("w").value.trim(); if(w) speak(w); };
   const addOne=(item)=>{ if(BY.has(item.w.toLowerCase())) return false; item.custom=true; item.topic="我的單字"; S.custom.push(item); BY.set(item.w.toLowerCase(), item); return true; };
   $("save").onclick=()=>{ const item={w:$("w").value.trim(),pos:$("pos").value.trim(),zh:$("zh").value.trim(),ex:$("ex").value.trim(),exZh:$("exZh").value.trim()};
