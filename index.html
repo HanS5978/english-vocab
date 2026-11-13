@@ -279,6 +279,9 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
+const APP_VERSION="v3（11/14 發音修正）";
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
   const vs=speechSynthesis.getVoices().filter(v=>/^en[-_]/i.test(v.lang));
   voice = vs.find(v=>/en[-_]US/i.test(v.lang)&&/Samantha|Google|Natural|Aria|Jenny|Ava/i.test(v.name)) || vs.find(v=>/en[-_]US/i.test(v.lang)) || vs[0] || null; }
@@ -302,7 +305,10 @@ function browserSpeak(text, slow){
   const ss=window.speechSynthesis;
   if(ss.speaking||ss.pending) ss.cancel();          // iPhone：一律先 cancel 再 speak 有時會沒聲音，只在需要時才取消
   if(!voice) pickVoice();
-  const u=new SpeechSynthesisUtterance(text); u.lang="en-US"; if(voice) u.voice=voice; u.rate=slow?0.6:0.95; u.volume=1;
+  const u=new SpeechSynthesisUtterance(text); u.lang="en-US"; u.rate=slow?0.6:0.95; u.volume=1;
+  // iPhone 指定聲音時，若該聲音沒下載會完全沒聲音，所以 iPhone 預設只指定語言、讓系統自己選聲音
+  const useVoice = voiceMode==="pick" || (voiceMode==="auto" && !IS_IOS);
+  if(useVoice && voice) u.voice=voice;
   ss.speak(u); try{ ss.resume(); }catch(e){}
   return u;
 }
@@ -597,6 +603,12 @@ function renderAdd(){
   <div class="card"><h2>進度保存</h2>
     <p class="muted" style="margin:0">${cloud?"☁️ 你的學習進度、收藏和自訂單字會存到你的 Claude 帳號，換手機或電腦登入同一個帳號打開就能接著學。":"目前存在這個瀏覽器裡。登入 Claude 打開這個頁面時，進度會自動同步到你的帳號。"}</p>
     <div class="btns"><button class="btn ghost" id="copy">複製我的單字（${S.custom.length} 個）</button></div></div>
+  <div class="card"><h2>🔧 發音測試</h2>
+    <div id="diag" class="muted" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre-wrap"></div>
+    <label>發音方式</label>
+    <div class="seg" id="vmSeg"><button data-v="auto">自動</button><button data-v="plain">系統預設聲音</button><button data-v="pick">指定英文聲音</button></div>
+    <div class="btns"><button class="btn ghost" id="vTest">🔊 測試發音：Hello, nice to meet you.</button></div>
+    <p class="muted" style="margin:8px 0 0">iPhone 沒聲音時請檢查：① 側邊靜音開關或「動作按鈕」不要開靜音 ② 音量調大 ③ 設定 → 輔助使用 → 朗讀內容 → 聲音 → 英文，下載一個英文聲音。</p></div>
   <div class="card"><h2>完整進度備份</h2>
     <p class="muted" style="margin-top:0">把學習進度、收藏、自訂單字整包複製成一段備份碼，貼到記事本或傳給自己保存。換手機、換瀏覽器或清除資料後，貼回來就能還原。</p>
     <div class="btns"><button class="btn ghost" id="bk">📋 複製進度備份碼</button></div>
@@ -604,6 +616,13 @@ function renderAdd(){
     <div class="btns"><button class="btn ghost" id="rs">♻️ 用備份碼還原</button></div>
     <div id="rsConfirm"></div></div>`;
   const $=id=>document.getElementById(id);
+  const showDiag=()=>{ let v=[]; try{ v=speechSynthesis.getVoices(); }catch(e){}
+    const en=v.filter(x=>/^en[-_]/i.test(x.lang));
+    $("diag").textContent=`版本：${APP_VERSION}\n裝置：${IS_IOS?"iPhone/iPad":"其他"}\n支援語音：${"speechSynthesis" in window?"是":"否"}\n聲音數量：${v.length}（英文 ${en.length}）\n指定聲音：${voice?voice.name+" "+voice.lang:"無"}\nClaude 語音：${tts?"有":"無"}`;
+    document.querySelectorAll("#vmSeg button").forEach(b=>b.classList.toggle("on",b.dataset.v===voiceMode)); };
+  showDiag(); try{ speechSynthesis.onvoiceschanged=()=>{ pickVoice(); showDiag(); }; }catch(e){}
+  document.querySelectorAll("#vmSeg button").forEach(b=>b.onclick=()=>{ voiceMode=b.dataset.v; try{ localStorage.setItem("vocab_voice_mode",voiceMode); }catch(e){} showDiag(); speak("Hello, nice to meet you."); });
+  $("vTest").onclick=()=>speak("Hello, nice to meet you.");
   $("try").onclick=()=>{ const w=$("w").value.trim(); if(w) speak(w); };
   const addOne=(item)=>{ if(BY.has(item.w.toLowerCase())) return false; item.custom=true; item.topic="我的單字"; S.custom.push(item); BY.set(item.w.toLowerCase(), item); return true; };
   $("save").onclick=()=>{ const item={w:$("w").value.trim(),pos:$("pos").value.trim(),zh:$("zh").value.trim(),ex:$("ex").value.trim(),exZh:$("exZh").value.trim()};
