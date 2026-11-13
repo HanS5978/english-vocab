@@ -115,9 +115,8 @@ const ALL = []; const BY = new Map();
 TOPICS.forEach(t=>t.words.forEach(x=>{ const k=x.w.toLowerCase(); if(!BY.has(k)){ ALL.push(x); BY.set(k, x); } }));
 function groupWords(gid){ const seen=new Set(), out=[]; TOPICS.filter(t=>t.group===gid).forEach(t=>t.words.forEach(x=>{const k=x.w.toLowerCase(); if(!seen.has(k)){seen.add(k); out.push(x);}})); return out; }
 const GW = Object.fromEntries(GROUPS.map(g=>[g.id, groupWords(g.id)]));
-function topicOptions(sel, withAll){
-  return 
-    GROUPS.map(g=>`<optgroup label="${g.icon} ${g.name}"><option value="g:${g.id}" ${sel==="g:"+g.id?"selected":""}>${g.icon} 整條路線：${g.name}（${GW[g.id].length}）</option>${TOPICS.filter(t=>t.group===g.id).map(t=>`<option value="${esc(t.name)}" ${t.name===sel?"selected":""}>${esc(t.name)}（${t.words.length}）</option>`).join("")}</optgroup>`).join("");
+function topicOptions(sel){
+  return GROUPS.map(g=>`<optgroup label="${g.icon} ${g.name}"><option value="g:${g.id}" ${sel==="g:"+g.id?"selected":""}>${g.icon} 整條路線：${g.name}（${GW[g.id].length}）</option>${TOPICS.filter(t=>t.group===g.id).map(t=>`<option value="${esc(t.name)}" ${t.name===sel?"selected":""}>${esc(t.name)}（${t.words.length}）</option>`).join("")}</optgroup>`).join("");
 }
 const INTERVALS = [0,1,2,4,7,15,30,60,120];   // box → 下次複習的天數
 const MASTER_BOX = 6;
@@ -207,6 +206,7 @@ function seededShuffle(arr, seed){ const a=[...arr]; let x=seed||1; const rnd=()
 const RL = (()=>{ const used=new Set(); return GROUPS.map(g=>{ const own=GW[g.id].filter(x=>{ const k=x.w.toLowerCase(); if(used.has(k)) return false; used.add(k); return true; });
   return seededShuffle(own, hashStr("route-"+g.id)); }); })();
 function preset(){ return PRESETS[0]; }
+const SORTED_RL = RL.map(l=>[...l].sort((a,b)=>a.w.toLowerCase().localeCompare(b.w.toLowerCase())));   // 單字庫依字母排列
 /* 依比例分配 n 個名額；某條路線字不夠時，由其他路線補上 */
 function allocate(n, ratio, avail){
   const tot=ratio.reduce((a,b)=>a+b,0), exact=ratio.map(r=>r*n/tot), take=exact.map(Math.floor);
@@ -279,7 +279,7 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
-const APP_VERSION="v4（11/14 靜音模式發音）";
+const APP_VERSION="v7（11/14 學新字直接開始）";
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
@@ -364,7 +364,7 @@ function speak(text, slow, auto){
 
 /* ================= 畫面框架 ================= */
 const app=document.getElementById("app");
-let state={tab:"home", learn:null, quiz:null, bank:{topic:"g:pro", q:"", open:null, filter:"all"}};
+let state={tab:"home", learn:null, quiz:null, bank:{topic:"r0", q:"", open:null, filter:"all"}};
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>go(b.dataset.tab));
 function go(tab){ state.tab=tab; document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.toggle("on",x.dataset.tab===tab)); render(); window.scrollTo(0,0); }
 function render(){ ({home:renderHome, learn:renderLearn, quiz:renderQuiz, bank:renderBank, add:renderAdd})[state.tab](); }
@@ -430,12 +430,7 @@ function startLearn(n){
 }
 function renderLearn(){
   const L=state.learn;
-  if(!L){
-    const remain=Math.max(0,DAY-todayLog().n);
-    app.innerHTML=`<div class="card center"><h2>學新字</h2><p class="muted">每張字卡會有單字、發音、意思和例句。看完按「記住了」或「還不熟」，學完可以馬上拼字測驗。</p>
-      <button class="btn" id="s1">${remain?`學今天的 ${remain} 個新字`:`再多學 ${DAY} 個新字`}</button></div>`;
-    document.getElementById("s1").onclick=()=>startLearn(remain||DAY); return;
-  }
+  if(!L){ const remain=Math.max(0,DAY-todayLog().n); startLearn(remain||DAY); return; }   // 點「學新字」直接開始，不再多一頁
   S.pending = L.items.slice(L.i).map(x=>x.w.toLowerCase()); lsSave();   // 隨時記住還沒學的字，被打斷也不會漏掉
   if(L.i>=L.items.length){
     app.innerHTML=`<div class="card center"><div class="big">🎉 ${L.done.length}</div><p>個新字學完了！</p>
@@ -581,7 +576,7 @@ function renderBank(){
   const B=state.bank;
   app.innerHTML=`<input id="q" placeholder="🔍 搜尋英文或中文（全部 ${ALL.length} 字）" value="${esc(B.q)}">
   <div class="row" style="margin-top:8px">
-    <select id="tp" class="grow" ${B.q?"disabled":""}>${topicOptions(B.topic,false)}<option value="我的單字" ${B.topic==="我的單字"?"selected":""}>✏️ 我的單字</option></select>
+    <select id="tp" class="grow" ${B.q?"disabled":""}>${GROUPS.map((g,i)=>`<option value="r${i}" ${B.topic==="r"+i?"selected":""}>${g.icon} ${g.name}（${RL[i].length}）</option>`).join("")}${S.custom.length?`<option value="我的單字" ${B.topic==="我的單字"?"selected":""}>✏️ 我的單字（${S.custom.length}）</option>`:""}</select>
     <select id="flt" style="width:auto"><option value="all">全部</option><option value="new">未學</option><option value="learned">已學</option><option value="star">收藏</option></select>
   </div>
   <div class="card list" id="list" style="margin-top:10px"></div>`;
@@ -596,7 +591,8 @@ function drawList(){
   const B=state.bank, el=document.getElementById("list");
   let list;
   if(B.q.trim()){ const s=B.q.trim().toLowerCase(); list=[...ALL,...S.custom].filter(x=>x.w.toLowerCase().includes(s)||x.zh.includes(B.q.trim())).slice(0,200); }
-  else list = B.topic==="我的單字" ? S.custom : B.topic.startsWith("g:") ? (GW[B.topic.slice(2)]||[]) : (TOPICS.find(t=>t.name===B.topic)||{words:[]}).words;
+  else if(B.topic==="我的單字") list=S.custom;
+  else { const i=/^r\d$/.test(B.topic)?+B.topic.slice(1):0; list=SORTED_RL[i]; }
   if(B.filter==="new") list=list.filter(x=>!P(x.w));
   if(B.filter==="learned") list=list.filter(x=>P(x.w));
   if(B.filter==="star") list=list.filter(x=>S.stars[x.w.toLowerCase()]);
@@ -611,7 +607,7 @@ function drawList(){
   el.querySelectorAll(".item").forEach(it=>it.onclick=()=>{ const i=+it.dataset.i; B.open=B.open===i?null:i; drawList(); });
   el.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ const w=b.dataset.del; S.custom=S.custom.filter(c=>c.w!==w); delete S.prog[w.toLowerCase()]; BY.delete(w.toLowerCase()); save(); B.open=null; drawList(); });
   const lt=document.getElementById("lt"); if(lt) lt.onclick=()=>{ const items=list.filter(x=>!P(x.w)).slice(0,DAY); if(!items.length){toast("這組的字都學過了");return;} state.learn={items,i:0,done:[]}; go("learn"); };
-  const qt=document.getElementById("qt"); if(qt) qt.onclick=()=>startQuiz(shuffle([...list]).slice(0,20), B.topic.startsWith("g:")?(GROUPS.find(g=>"g:"+g.id===B.topic)||{}).name||"單字庫":B.topic);
+  const qt=document.getElementById("qt"); if(qt) qt.onclick=()=>startQuiz(shuffle([...list]).slice(0,20), /^r\d$/.test(B.topic)?GROUPS[+B.topic.slice(1)].name:B.topic);
 }
 
 /* ================= 新增 ================= */
