@@ -268,7 +268,7 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
-const APP_VERSION="v12（11/14 單字庫兩種測驗）";
+const APP_VERSION="v13（11/14 離線使用）";
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
@@ -646,7 +646,7 @@ function renderAdd(){
   const $=id=>document.getElementById(id);
   const showDiag=()=>{ let v=[]; try{ v=speechSynthesis.getVoices(); }catch(e){}
     const en=v.filter(x=>/^en[-_]/i.test(x.lang));
-    $("diag").textContent=`版本：${APP_VERSION}\n裝置：${IS_IOS?"iPhone/iPad":"其他"}\n支援語音：${"speechSynthesis" in window?"是":"否"}\n聲音數量：${v.length}（英文 ${en.length}）\n指定聲音：${voice?voice.name+" "+voice.lang:"無"}\nClaude 語音：${tts?"有":"無"}\n靜音模式發音：${silentModeOn?"開":"關"}（${navigator.audioSession?"支援音訊類型設定":"不支援音訊類型設定"}，無聲音訊${audioUnlocked?"播放中":"未播放"}）`;
+    $("diag").textContent=`版本：${APP_VERSION}\n裝置：${IS_IOS?"iPhone/iPad":"其他"}\n支援語音：${"speechSynthesis" in window?"是":"否"}\n聲音數量：${v.length}（英文 ${en.length}）\n指定聲音：${voice?voice.name+" "+voice.lang:"無"}\nClaude 語音：${tts?"有":"無"}\n離線使用：${offlineReady()?"已就緒（沒網路也能用）":"尚未就緒（連網打開一次後就會準備好）"}\n靜音模式發音：${silentModeOn?"開":"關"}（${navigator.audioSession?"支援音訊類型設定":"不支援音訊類型設定"}，無聲音訊${audioUnlocked?"播放中":"未播放"}）`;
     $("smBtn").textContent = silentModeOn ? "🔔 靜音模式也發音：開（點一下關閉）" : "🔕 靜音模式也發音：關（點一下開啟）";
     document.querySelectorAll("#vmSeg button").forEach(b=>b.classList.toggle("on",b.dataset.v===voiceMode)); };
   showDiag(); try{ speechSynthesis.onvoiceschanged=()=>{ pickVoice(); showDiag(); }; }catch(e){}
@@ -679,6 +679,11 @@ function renderAdd(){
 /* ================= 其他 ================= */
 let tt; function toast(m){ const el=document.getElementById("toast"); el.textContent=m; el.style.display="block"; clearTimeout(tt); tt=setTimeout(()=>el.style.display="none",2400); }
 window.addEventListener("pagehide", ()=>{ lsSave(); });
+/* 離線使用：GitHub 版註冊快取程式（Claude 版不支援，會自動略過） */
+if("serviceWorker" in navigator && location.protocol!=="file:" && !/claude\.ai|claudeusercontent|anthropic/.test(location.hostname)){
+  try{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }catch(e){}
+}
+function offlineReady(){ try{ return !!(navigator.serviceWorker && navigator.serviceWorker.controller); }catch(e){ return false; } }
 /* 過了午夜自動換成新的一天 */
 let shownDay=today();
 function checkDay(){ if(today()!==shownDay){ shownDay=today(); if(state.learn){ /* 學字中不打斷，結束後回到今日就是新的一天 */ } else if(!state.quiz||state.quiz.done){ state.quiz=null; render(); toast("新的一天開始了！"); } } }
