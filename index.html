@@ -173,9 +173,7 @@ function dueList(){ const t=today(); return Object.keys(S.prog).filter(k=>S.prog
 function bumpLog(field,n=1){ const t=today(); S.log[t]=S.log[t]||{n:0,q:0,c:0}; S.log[t][field]+=n;
   if(S.streak.last!==t){ S.streak.n = (S.streak.last===t-1)? S.streak.n+1 : 1; S.streak.last=t; }
   const keys=Object.keys(S.log).map(Number).sort((a,b)=>a-b); while(keys.length>120) delete S.log[keys.shift()]; }
-function learnedDay(k){ const p=S.prog[k]; if(!p) return null; if(p[3]!=null) return p[3];
-  // 舊資料沒有記錄學習日：剛學、還沒複習過的字視為今天學的
-  if(p[0]<=2 && p[2]===0 && (p[1]===today()+1 || p[1]===today()+2)) return today(); return -1; }
+function learnedDay(k){ const p=S.prog[k]; if(!p) return null; return p[3]!=null ? p[3] : -1; }   // 只有用字卡學的字才有學習日
 function recentLearned(days){ const t=today(); return Object.keys(S.prog).filter(k=>learnedDay(k)>t-days).map(k=>BY.get(k)).filter(Boolean); }
 function todayLog(){ return S.log[today()]||{n:0,q:0,c:0}; }
 function markLearned(x, known){
@@ -183,7 +181,9 @@ function markLearned(x, known){
   const box = known?2:1; S.prog[k]=[box, today()+INTERVALS[box], 0, today()]; bumpLog("n"); save();
 }
 function grade(x, ok){
-  const k=x.w.toLowerCase(); const p=S.prog[k] || [0,today(),0];
+  const k=x.w.toLowerCase();
+  if(!S.prog[k] && !x.custom){ bumpLog("q"); if(ok) bumpLog("c",1); save(); return; }   // 還沒學過的字：只算練習，不加入學習紀錄
+  const p=S.prog[k] || [0,today(),0,-1];   // 自訂單字第一次測驗時才建立紀錄，不算「今天學的字」
   if(ok){ p[0]=Math.min(p[0]+1, INTERVALS.length-1); p[1]=today()+INTERVALS[p[0]]; }
   else { p[0]=1; p[1]=today(); p[2]=(p[2]||0)+1; }
   S.prog[k]=p; bumpLog("q"); if(ok) bumpLog("c",1); save();
@@ -268,7 +268,7 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
-const APP_VERSION="v9（11/14 全部整合到首頁）";
+const APP_VERSION="v12（11/14 單字庫兩種測驗）";
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
@@ -597,15 +597,18 @@ function drawList(){
   if(!list.length){ el.innerHTML=`<div class="empty">${B.topic==="我的單字"&&!B.q?"還沒有自訂單字，到「新增」加入吧。":"沒有符合的單字"}</div>`; return; }
   const learnedN=list.filter(x=>P(x.w)).length;
   el.innerHTML=`<div class="row muted" style="padding-bottom:6px;border-bottom:1px solid var(--line)"><span class="grow">${list.length} 個字・已學 ${learnedN}</span>
-    ${!B.q?`<button class="icon" id="lt">學這組新字</button><button class="icon" id="qt">測驗這組</button>`:""}</div>`+
+    ${!B.q?`<button class="icon" id="qt">測驗整組</button><button class="icon" id="qd" ${learnedN?"":"disabled"}>測驗已學過</button>`:""}</div>`+
   list.map((x,i)=>{ const p=P(x.w); const tag=!p?'<span class="tag new">未學</span>':(p[1]<=today()?'<span class="tag due">待複習</span>':(p[0]>=MASTER_BOX?'<span class="tag">熟記</span>':'<span class="tag">學習中</span>'));
     return `<div class="item" data-i="${i}"><div class="grow"><span class="w">${esc(x.w)}</span>${tag}<div class="m">${esc(x.pos)} ${esc(x.zh)}</div></div><button class="icon" data-say="${esc(x.w)}">🔊</button></div>
     ${B.open===i?`<div class="detail">${exBlock(x)}<div class="btns">${spk(x)}${x.custom?`<button class="icon" data-del="${esc(x.w)}" style="color:var(--warn)">刪除</button>`:""}</div></div>`:""}`; }).join("");
   bindSpeak(el);
   el.querySelectorAll(".item").forEach(it=>it.onclick=()=>{ const i=+it.dataset.i; B.open=B.open===i?null:i; drawList(); });
   el.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ const w=b.dataset.del; S.custom=S.custom.filter(c=>c.w!==w); delete S.prog[w.toLowerCase()]; BY.delete(w.toLowerCase()); save(); B.open=null; drawList(); });
-  const lt=document.getElementById("lt"); if(lt) lt.onclick=()=>{ const items=list.filter(x=>!P(x.w)).slice(0,DAY); if(!items.length){toast("這組的字都學過了");return;} state.learn={items,i:0,done:[]}; go("learn"); };
-  const qt=document.getElementById("qt"); if(qt) qt.onclick=()=>startQuiz(shuffle([...list]).slice(0,20), /^r\d$/.test(B.topic)?GROUPS[+B.topic.slice(1)].name:B.topic);
+  const qd=document.getElementById("qd"); if(qd) qd.onclick=()=>{ const pool=list.filter(x=>P(x.w)); if(!pool.length){ toast("這組還沒有學過的字"); return; }
+    startQuiz(shuffle([...pool]).slice(0,TOTAL_Q), (/^r\d$/.test(B.topic)?GROUPS[+B.topic.slice(1)].name:B.topic)+"・已學過"); };
+  const qt=document.getElementById("qt"); if(qt) qt.onclick=()=>{
+    const pool = list;   // 整組都可以測（沒學過的字只當練習，不會被算成已學）
+    startQuiz(shuffle([...pool]).slice(0,TOTAL_Q), /^r\d$/.test(B.topic)?GROUPS[+B.topic.slice(1)].name:B.topic); };
 }
 
 /* ================= 新增 ================= */
