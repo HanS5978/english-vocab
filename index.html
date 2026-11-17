@@ -268,7 +268,7 @@ function bindPw(after){
 
 /* ================= 發音 ================= */
 let voice=null;
-const APP_VERSION="v13（11/14 離線使用）";
+const APP_VERSION="v14（11/17 例句發音）";
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 let voiceMode = (()=>{ try{ return localStorage.getItem("vocab_voice_mode")||"auto"; }catch(e){ return "auto"; } })();   // auto | plain | pick
 function pickVoice(){ if(!("speechSynthesis" in window)) return;
@@ -366,7 +366,7 @@ function bindSpeak(root=app){
   root.querySelectorAll("[data-star]").forEach(b=>b.onclick=e=>{e.stopPropagation(); const k=b.dataset.star.toLowerCase(); S.stars[k]?delete S.stars[k]:S.stars[k]=1; save(); b.textContent=S.stars[k]?"★":"☆";});
 }
 function spk(x){ return `<button class="icon" data-say="${esc(x.w)}">🔊</button><button class="icon" data-slow="${esc(x.w)}">🐢</button><button class="icon star" data-star="${esc(x.w)}">${S.stars[x.w.toLowerCase()]?"★":"☆"}</button>`; }
-function exBlock(x){ return x.ex?`<div class="ex"><div class="row"><div class="grow">${esc(x.ex)}</div><button class="icon" data-say="${esc(x.ex)}">🔊</button></div>${x.exZh?`<div class="zh2">${esc(x.exZh)}</div>`:""}</div>`:""; }
+function exBlock(x){ return x.ex?`<div class="ex"><div class="row"><div class="grow">${esc(x.ex)}</div><div class="row" style="gap:6px;flex:none"><button class="icon" data-say="${esc(x.ex)}">🔊</button><button class="icon" data-slow="${esc(x.ex)}">🐢</button></div></div>${x.exZh?`<div class="zh2">${esc(x.exZh)}</div>`:""}</div>`:""; }
 
 /* ================= 今日 ================= */
 function renderHome(){
@@ -507,6 +507,7 @@ function renderQuestion(){
     <div class="q-zh">${esc(x.zh)} <span class="pos">${esc(x.pos)}</span></div>
     ${b?`<div class="q-sent">${b.html}</div>${x.exZh?`<div class="zh2">${esc(x.exZh)}</div>`:""}${b.changed?`<div class="muted" style="margin-top:4px">💬 空格裡是這個字的變化形（例如加 -s、-ed、-ing），請拼出<b>原形</b>。</div>`:""}`:""}
     <div class="btns"><button class="icon" id="say">🔊 聽單字</button><button class="icon" id="slow">🐢 慢速</button><button class="icon" id="hint">💡 提示</button></div>
+    ${x.ex?`<div class="btns"><button class="icon" id="sayEx">🔊 聽例句</button><button class="icon" id="slowEx">🐢 例句慢速</button></div>`:""}
     <div id="hintBox" class="muted" style="margin-top:8px"></div>
     <input id="ans" class="answer" style="margin-top:10px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="輸入拼字">
     <div id="fb"></div>
@@ -516,6 +517,7 @@ function renderQuestion(){
   const ans=document.getElementById("ans");
   document.getElementById("say").onclick=()=>speak(x.w);
   document.getElementById("slow").onclick=()=>speak(x.w,true);
+  if(x.ex){ document.getElementById("sayEx").onclick=()=>speak(x.ex); document.getElementById("slowEx").onclick=()=>speak(x.ex,true); }
   document.getElementById("hint").onclick=()=>{ q.hints=Math.min(q.hints+1,q.hintOrder.length);
     const open=new Set(q.hintOrder.slice(0,q.hints));
     const shown=x.w.split("").map((ch,i)=>ch===" "?"   ":ch==="-"?"-":(open.has(i)?ch:"_")).join(" ");
@@ -540,6 +542,8 @@ function check(giveUp){
   else{ if(!q.wrong.includes(x)) q.wrong.push(x);
     fb.innerHTML=`<div class="fb no">${giveUp?"答案是：":"❌ 正確拼法："}<div class="diff">${diffHTML(norm(v),x.w)}</div>${v.trim()&&!giveUp?`<div class="muted">你寫的：${esc(v)}</div>`:""}</div>`; }
   speak(x.w);
+  if(x.ex){ const d=document.createElement("div"); d.innerHTML=`<div class="ex" style="margin-top:10px"><div class="row"><div class="grow">${esc(x.ex)}</div><div class="row" style="gap:6px;flex:none"><button class="icon" data-say="${esc(x.ex)}">🔊</button><button class="icon" data-slow="${esc(x.ex)}">🐢</button></div></div><div class="muted" style="font-size:12px">聽完整例句</div></div>`;
+    fb.appendChild(d); bindSpeak(d); }
   const btn=document.getElementById("check"); btn.textContent="下一題 →"; btn.onclick=next;
   document.getElementById("skip").style.display="none";
 }
@@ -658,11 +662,11 @@ function renderAdd(){
   $("save").onclick=()=>{ const item={w:$("w").value.trim(),pos:$("pos").value.trim(),zh:$("zh").value.trim(),ex:$("ex").value.trim(),exZh:$("exZh").value.trim()};
     if(!item.w||!item.zh){ toast("請至少填英文單字和中文意思"); return; }
     if(!addOne(item)){ toast(`「${item.w}」已經在單字本裡了`); return; }
-    save(); toast(`已加入「${item.w}」`); renderAdd(); };
+    save(); toast(`已加入「${item.w}」`); render(); };
   $("bulkSave").onclick=()=>{ let n=0,dup=0; $("bulk").value.split("\n").forEach(line=>{ const p=line.split("|").map(s=>s.trim());
       if(p[0]&&p[1]){ addOne({w:p[0],pos:"",zh:p[1],ex:p[2]||"",exZh:p[3]||""})?n++:dup++; } });
     if(!n){ toast(dup?"這些字都已經在單字本裡了":"沒有讀到格式正確的行"); return; }
-    save(); toast(`已加入 ${n} 個單字`+(dup?`（${dup} 個重複略過）`:"")); renderAdd(); };
+    save(); toast(`已加入 ${n} 個單字`+(dup?`（${dup} 個重複略過）`:"")); render(); };
   $("bk").onclick=async()=>{ const txt="VOCAB1:"+btoa(unescape(encodeURIComponent(JSON.stringify(S))));
     try{ await navigator.clipboard.writeText(txt); toast("備份碼已複製，請貼到記事本保存"); } catch(e){ $("bkText").value=txt; $("bkText").select(); toast("無法自動複製，備份碼已放在下方文字框，請手動複製"); } };
   $("rs").onclick=()=>{ const v=$("bkText").value.trim(); let d=null;

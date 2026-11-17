@@ -1,7 +1,7 @@
 /* 我的英文單字本：離線快取
    - 第一次打開時把所有檔案存到手機裡，之後沒網路也能用。
    - 有網路時：首頁先抓最新版（3 秒內沒回應就用手機裡的），其他檔案先用手機裡的、背景再更新。 */
-const CACHE = "vocab-v13";
+const CACHE = "vocab-v14";
 const FILES = ["./", "./index.html", "./words.js", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
